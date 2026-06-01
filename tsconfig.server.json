@@ -4,6 +4,7 @@
     "outDir": "dist/server",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "allowImportingTsExtensions": false,
     "noEmit": false,
     "esModuleInterop": true,
     "skipLibCheck": true
