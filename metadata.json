@@ -1,0 +1,6 @@
+{
+  "name": "SyncUp",
+  "description": "An anonymous storytelling and emotional-support platform where users can safely share experiences, confessions, life struggles, thoughts, and emotions without social pressure.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
