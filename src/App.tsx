@@ -152,6 +152,108 @@ export default function App() {
   useEffect(() => {
     fetchSession();
   }, []);
+  // Auto-route logged in users away from landing to feed
+  useEffect(() => {
+    if (!isLoadingSession && session && currentView === 'landing') {
+      setCurrentView('feed');
+    }
+  }, [session, isLoadingSession, currentView]);
+
+  // Synchronize component state to browser history hash
+  useEffect(() => {
+    if (isLoadingSession) return;
+
+    let targetHash = `#/${currentView}`;
+    if (detailedPost) {
+      targetHash += `/post/${detailedPost.id}`;
+    } else if (showAuthModal) {
+      targetHash += `/auth`;
+    } else if (showMoodModal) {
+      targetHash += `/mood`;
+    }
+
+    if (window.location.hash !== targetHash) {
+      if (!window.location.hash || window.location.hash === '#/' || (session && currentView === 'feed' && window.location.hash === '#/landing')) {
+        window.history.replaceState({ currentView, detailedPostId: detailedPost?.id }, '', targetHash);
+      } else {
+        window.history.pushState({ currentView, detailedPostId: detailedPost?.id }, '', targetHash);
+      }
+    }
+  }, [currentView, detailedPost, showAuthModal, showMoodModal, isLoadingSession, session]);
+
+  // Synchronize back-button / popstate events to React state
+  useEffect(() => {
+    if (isLoadingSession) return;
+
+    const handlePopState = () => {
+      const hash = window.location.hash;
+      if (!hash || hash === '#/' || hash === '#/landing') {
+        if (session) {
+          window.history.replaceState({ currentView: 'feed' }, '', '#/feed');
+          setCurrentView('feed');
+          setDetailedPost(null);
+          setShowAuthModal(false);
+          setShowMoodModal(false);
+        } else {
+          setCurrentView('landing');
+          setDetailedPost(null);
+          setShowAuthModal(false);
+          setShowMoodModal(false);
+        }
+        return;
+      }
+
+      const parts = hash.substring(2).split('/');
+      const view = parts[0];
+
+      if (['landing', 'feed', 'create', 'explore', 'profile', 'admin', 'auth', 'mood'].includes(view)) {
+        if (view === 'auth') {
+          setShowAuthModal(true);
+        } else if (view === 'mood') {
+          setShowMoodModal(true);
+        } else {
+          setCurrentView(view as any);
+          setShowAuthModal(false);
+          setShowMoodModal(false);
+        }
+      }
+
+      const postTagIndex = parts.indexOf('post');
+      if (postTagIndex !== -1 && parts[postTagIndex + 1]) {
+        const postId = parts[postTagIndex + 1];
+        const found = posts.find(p => p.id === postId);
+        if (found) {
+          setDetailedPost(found);
+        } else {
+          // Fallback if posts list hasn't resolved yet
+          fetch(`/api/posts`)
+            .then(res => res.json())
+            .then(json => {
+              if (json.success && Array.isArray(json.data)) {
+                const fetchedPost = json.data.find((p: any) => p.id === postId);
+                if (fetchedPost) {
+                  setDetailedPost(fetchedPost);
+                }
+              }
+            })
+            .catch(err => console.error('Error auto-syncing deep-linked post:', err));
+        }
+      } else {
+        setDetailedPost(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Auto-parse on mount if hash was preset
+    if (window.location.hash && window.location.hash !== '#/') {
+      handlePopState();
+    }
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, [posts, session, isLoadingSession]);
 
   useEffect(() => {
     if (currentView !== 'landing' && currentView !== 'create' && currentView !== 'admin') {
