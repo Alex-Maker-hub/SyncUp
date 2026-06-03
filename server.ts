@@ -388,59 +388,185 @@ async function startServer() {
     }
   });
 
-  // Google Sign In / Registration with dynamic AI anonymous nickname generation (simulation mapping)
+// Google Sign In / Registration with dynamic AI anonymous nickname generation (simulation mapping)
   app.post("/api/auth/google", async (req, res) => {
     const { email, fullName } = req.body;
     if (!email) {
       return res.status(400).json({ success: false, error: "Google email is required for authentication." });
     }
 
-    // Check if an existing user is linked to this Google email
-    let matched = users.find(u => u.googleEmail && u.googleEmail.toLowerCase() === email.trim().toLowerCase());
-    
-    if (matched) {
-      currentActiveSession = { ...matched };
-      return res.json({ success: true, data: currentActiveSession, isNewUser: false });
-    }
+    const emailLow = email.trim().toLowerCase();
+    const isMongo = await connectToDatabase();
 
-    // New user signing up with Google! Generate custom comforting pseudonym via AI
-    try {
-      const profile = await generateAiAnonymousProfile();
+    if (isMongo) {
+      try {
+        const targetClerkId = `google-${emailLow}`;
+        let dbUser = await User.findOne({ 
+          $or: [
+            { clerkUserId: targetClerkId },
+            { googleEmail: emailLow },
+            { email: emailLow }
+          ]
+        });
+
+        if (dbUser) {
+          currentActiveSession = {
+            id: dbUser.clerkUserId,
+            clerkUserId: dbUser.clerkUserId,
+            username: dbUser.username,
+            avatarSeed: dbUser.avatarSeed,
+            role: dbUser.role,
+            streak: dbUser.streak,
+            moodHistory: dbUser.moodHistory,
+            bookmarks: dbUser.bookmarks,
+            createdAt: dbUser.createdAt.toISOString()
+          };
+          return res.json({ success: true, data: currentActiveSession, isNewUser: false });
+        }
+
+        // New user signing up with Google! Generate custom comforting pseudonym via AI
+        const profile = await generateAiAnonymousProfile();
+        let username = profile.username;
+        let exists = await User.findOne({ username });
+        let tries = 0;
+        while (exists && tries < 5) {
+          username = `${profile.username.replace(/\d+$/, '')}${Math.floor(100 + Math.random() * 900)}`;
+          exists = await User.findOne({ username });
+          tries++;
+        }
+
+        dbUser = await User.create({
+          clerkUserId: targetClerkId,
+          googleEmail: emailLow,
+          email: emailLow,
+          username,
+          avatarSeed: profile.avatarSeed,
+          role: "user",
+          streak: 1,
+          moodHistory: [],
+          bookmarks: [],
+          createdAt: new Date()
+        });
+
+        currentActiveSession = {
+          id: dbUser.clerkUserId,
+          clerkUserId: dbUser.clerkUserId,
+          username: dbUser.username,
+          avatarSeed: dbUser.avatarSeed,
+          role: dbUser.role,
+          streak: dbUser.streak,
+          moodHistory: dbUser.moodHistory,
+          bookmarks: dbUser.bookmarks,
+          createdAt: dbUser.createdAt.toISOString()
+        };
+
+        return res.json({ success: true, data: currentActiveSession, isNewUser: true });
+      } catch (err) {
+        console.error("Google Mongoose sync failed:", err);
+        return res.status(500).json({ success: false, error: "Database error during Google Authentication." });
+      }
+    } else {
+      // Check if an existing user is linked to this Google email
+      let matched = users.find((u: any) => 
+        (u.googleEmail && u.googleEmail.toLowerCase() === emailLow) ||
+        (u.email && u.email.toLowerCase() === emailLow) ||
+        (u.id && u.id === `google-${emailLow}`) ||
+        (u.clerkUserId && u.clerkUserId === `google-${emailLow}`)
+      );
       
-      // Make sure the AI-generated name is unique in our mock database
-      let username = profile.username;
-      let counter = 1;
-      while (users.some(u => u.username.toLowerCase() === username.toLowerCase())) {
-        username = `${profile.username.replace(/\d+$/, '')}${Math.floor(100 + Math.random() * 900)}`;
-        counter++;
-        if (counter > 5) break; 
+      if (matched) {
+        currentActiveSession = { ...matched };
+        return res.json({ success: true, data: currentActiveSession, isNewUser: false });
       }
 
-      const newUser = {
-        id: `user-${Date.now()}`,
-        username,
-        avatarSeed: profile.avatarSeed,
-        googleEmail: email.trim(),
-        fullName: fullName || "Google User",
-        role: "user",
-        createdAt: new Date().toISOString(),
-        streak: 1,
-        moodHistory: [],
-        bookmarks: []
-      };
+      // New user signing up with Google! Generate custom comforting pseudonym via AI
+      try {
+        const profile = await generateAiAnonymousProfile();
+        
+        // Make sure the AI-generated name is unique in our mock database
+        let username = profile.username;
+        let counter = 1;
+        while (users.some((u: any) => u.username.toLowerCase() === username.toLowerCase())) {
+          username = `${profile.username.replace(/\d+$/, '')}${Math.floor(100 + Math.random() * 900)}`;
+          counter++;
+          if (counter > 5) break; 
+        }
 
-      users.push(newUser);
-      currentActiveSession = { ...newUser };
-      res.json({ success: true, data: currentActiveSession, isNewUser: true });
-    } catch (err) {
-      res.status(550).json({ success: false, error: "Failed to generate your secure anonymous cover. Please try again." });
+        const newUser = {
+          id: `google-${emailLow}`,
+          clerkUserId: `google-${emailLow}`,
+          username,
+          avatarSeed: profile.avatarSeed,
+          googleEmail: emailLow,
+          email: emailLow,
+          fullName: fullName || "Google User",
+          role: "user",
+          createdAt: new Date().toISOString(),
+          streak: 1,
+          moodHistory: [],
+          bookmarks: []
+        };
+
+        users.push(newUser);
+        currentActiveSession = { ...newUser };
+        res.json({ success: true, data: currentActiveSession, isNewUser: true });
+      } catch (err) {
+        res.status(550).json({ success: false, error: "Failed to generate your secure anonymous cover. Please try again." });
+      }
     }
   });
 
   // Register
-  app.post("/api/auth/register", (req, res) => {
-    const { username, avatarSeed } = req.body;
+  app.post("/api/auth/register", async (req, res) => {
+    const { username, avatarSeed, email } = req.body;
     let finalProfile = { username, avatarSeed };
+    const emailLow = email && email.trim() ? email.trim().toLowerCase() : null;
+
+    // Check if email already registered and return that user (going back to where they stopped!)
+    const isMongo = await connectToDatabase();
+    if (isMongo) {
+      try {
+        if (emailLow) {
+          const targetClerkId = `google-${emailLow}`;
+          let dbUser = await User.findOne({
+            $or: [
+              { clerkUserId: targetClerkId },
+              { googleEmail: emailLow },
+              { email: emailLow }
+            ]
+          });
+          if (dbUser) {
+            currentActiveSession = {
+              id: dbUser.clerkUserId,
+              clerkUserId: dbUser.clerkUserId,
+              username: dbUser.username,
+              avatarSeed: dbUser.avatarSeed,
+              role: dbUser.role,
+              streak: dbUser.streak,
+              moodHistory: dbUser.moodHistory,
+              bookmarks: dbUser.bookmarks,
+              createdAt: dbUser.createdAt.toISOString()
+            };
+            return res.json({ success: true, data: currentActiveSession, isExistingUser: true });
+          }
+        }
+      } catch (err) {
+         console.warn("Register email check database warning:", err);
+      }
+    } else {
+      if (emailLow) {
+        let matched = users.find((u: any) => 
+          (u.googleEmail && u.googleEmail.toLowerCase() === emailLow) ||
+          (u.email && u.email.toLowerCase() === emailLow) ||
+          (u.id && u.id === `google-${emailLow}`) ||
+          (u.clerkUserId && u.clerkUserId === `google-${emailLow}`)
+        );
+        if (matched) {
+          currentActiveSession = { ...matched };
+          return res.json({ success: true, data: currentActiveSession, isExistingUser: true });
+        }
+      }
+    }
 
     // Auto-generate if left blank
     if (!finalProfile.username || finalProfile.username.trim() === "") {
@@ -450,56 +576,247 @@ async function startServer() {
     }
 
     // Check if username taken
-    const exists = users.find(u => u.username.toLowerCase() === finalProfile.username.toLowerCase());
-    if (exists) {
-      return res.status(400).json({ success: false, error: "Username is already taken. Try randomized helper details." });
-    }
-
-    const newUser = {
-      id: `user-${Date.now()}`,
-      username: finalProfile.username,
-      avatarSeed: finalProfile.avatarSeed || `seed-${Math.floor(Math.random() * 1000)}`,
-      role: finalProfile.username.toLowerCase().includes("moderator") || finalProfile.username.toLowerCase().includes("admin") ? "admin" : "user",
-      createdAt: new Date().toISOString(),
-      streak: 1,
-      moodHistory: [],
-      bookmarks: []
-    };
-
-    users.push(newUser);
-    currentActiveSession = { ...newUser };
-    res.json({ success: true, data: currentActiveSession });
-  });
-
-  // Log in
-  app.post("/api/auth/login", (req, res) => {
-    const { username } = req.body;
-    if (!username) {
-      return res.status(400).json({ success: false, error: "Please enter your anonymous alias." });
-    }
-
-    const matched = users.find(u => u.username.toLowerCase() === username.trim().toLowerCase());
-    if (matched) {
-      currentActiveSession = { ...matched };
-      res.json({ success: true, data: currentActiveSession });
+    if (isMongo) {
+      try {
+        const hashCheck = await User.findOne({ username: finalProfile.username });
+        if (hashCheck) {
+          return res.status(400).json({ success: false, error: "Username is already taken. Try randomized helper details." });
+        }
+      } catch (err) {
+        console.warn("MongoDB unique username warning:", err);
+      }
     } else {
-      // Create user automatically under this requested username! No lockouts
+      const exists = users.find((u: any) => u.username.toLowerCase() === finalProfile.username.toLowerCase());
+      if (exists) {
+        return res.status(400).json({ success: false, error: "Username is already taken. Try randomized helper details." });
+      }
+    }
+
+    const secureId = emailLow ? `google-${emailLow}` : `user-${Date.now()}`;
+
+    if (isMongo) {
+      try {
+        const dbUser = await User.create({
+          clerkUserId: secureId,
+          googleEmail: emailLow,
+          email: emailLow,
+          username: finalProfile.username,
+          avatarSeed: finalProfile.avatarSeed || `seed-${Math.floor(Math.random() * 1000)}`,
+          role: finalProfile.username.toLowerCase().includes("moderator") || finalProfile.username.toLowerCase().includes("admin") ? "admin" : "user",
+          streak: 1,
+          moodHistory: [],
+          bookmarks: [],
+          createdAt: new Date()
+        });
+
+        currentActiveSession = {
+          id: dbUser.clerkUserId,
+          clerkUserId: dbUser.clerkUserId,
+          username: dbUser.username,
+          avatarSeed: dbUser.avatarSeed,
+          role: dbUser.role,
+          streak: dbUser.streak,
+          moodHistory: dbUser.moodHistory,
+          bookmarks: dbUser.bookmarks,
+          createdAt: dbUser.createdAt.toISOString()
+        };
+        return res.json({ success: true, data: currentActiveSession });
+      } catch (dbErr) {
+        console.error("Mongoose registration via register endpoint failed:", dbErr);
+        return res.status(500).json({ success: false, error: "Could not save your cover in MongoDB." });
+      }
+    } else {
       const newUser = {
-        id: `user-${Date.now()}`,
-        username: username.trim(),
-        avatarSeed: `seed-${Math.floor(Math.random() * 1000)}`,
-        role: username.toLowerCase().includes("moderator") || username.toLowerCase().includes("admin") ? "admin" : "user",
+        id: secureId,
+        clerkUserId: secureId,
+        username: finalProfile.username,
+        avatarSeed: finalProfile.avatarSeed || `seed-${Math.floor(Math.random() * 1000)}`,
+        googleEmail: emailLow,
+        email: emailLow,
+        role: finalProfile.username.toLowerCase().includes("moderator") || finalProfile.username.toLowerCase().includes("admin") ? "admin" : "user",
         createdAt: new Date().toISOString(),
         streak: 1,
         moodHistory: [],
         bookmarks: []
       };
+
       users.push(newUser);
       currentActiveSession = { ...newUser };
       res.json({ success: true, data: currentActiveSession });
     }
   });
 
+  // Log in
+  app.post("/api/auth/login", async (req, res) => {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ success: false, error: "Please enter your anonymous alias or email." });
+    }
+
+    const normalizedValue = username.trim();
+    const isEmail = normalizedValue.includes("@");
+    const isMongo = await connectToDatabase();
+
+    if (isMongo) {
+      try {
+        let dbUser = null;
+        if (isEmail) {
+          const emailLow = normalizedValue.toLowerCase();
+          const targetClerkId = `google-${emailLow}`;
+          dbUser = await User.findOne({
+            $or: [
+              { clerkUserId: targetClerkId },
+              { googleEmail: emailLow },
+              { email: emailLow }
+            ]
+          });
+        } else {
+          dbUser = await User.findOne({ username: normalizedValue });
+        }
+
+        if (dbUser) {
+          currentActiveSession = {
+            id: dbUser.clerkUserId,
+            clerkUserId: dbUser.clerkUserId,
+            username: dbUser.username,
+            avatarSeed: dbUser.avatarSeed,
+            role: dbUser.role,
+            streak: dbUser.streak,
+            moodHistory: dbUser.moodHistory,
+            bookmarks: dbUser.bookmarks,
+            createdAt: dbUser.createdAt.toISOString()
+          };
+          return res.json({ success: true, data: currentActiveSession });
+        } else {
+          // If a user entered an email address that doesn't exist, let's auto-create them and log them in!
+          if (isEmail) {
+            const emailLow = normalizedValue.toLowerCase();
+            const targetClerkId = `google-${emailLow}`;
+            const profile = await generateAiAnonymousProfile();
+            
+            let usernameToUse = profile.username;
+            let exists = await User.findOne({ username: usernameToUse });
+            let tries = 0;
+            while (exists && tries < 5) {
+              usernameToUse = `${profile.username.replace(/\d+$/, '')}${Math.floor(100 + Math.random() * 900)}`;
+              exists = await User.findOne({ username: usernameToUse });
+              tries++;
+            }
+
+            dbUser = await User.create({
+              clerkUserId: targetClerkId,
+              googleEmail: emailLow,
+              email: emailLow,
+              username: usernameToUse,
+              avatarSeed: profile.avatarSeed,
+              role: "user",
+              streak: 1,
+              moodHistory: [],
+              bookmarks: [],
+              createdAt: new Date()
+            });
+
+            currentActiveSession = {
+              id: dbUser.clerkUserId,
+              clerkUserId: dbUser.clerkUserId,
+              username: dbUser.username,
+              avatarSeed: dbUser.avatarSeed,
+              role: dbUser.role,
+              streak: dbUser.streak,
+              moodHistory: dbUser.moodHistory,
+              bookmarks: dbUser.bookmarks,
+              createdAt: dbUser.createdAt.toISOString()
+            };
+            return res.json({ success: true, data: currentActiveSession });
+          } else {
+            // Regular alias not found - auto create alias to avoid login locks!
+            const profile = await generateAiAnonymousProfile();
+            const dbUser = await User.create({
+              clerkUserId: `user-${Date.now()}`,
+              username: normalizedValue,
+              avatarSeed: profile.avatarSeed,
+              role: normalizedValue.toLowerCase().includes("moderator") || normalizedValue.toLowerCase().includes("admin") ? "admin" : "user",
+              streak: 1,
+              moodHistory: [],
+              bookmarks: [],
+              createdAt: new Date()
+            });
+
+            currentActiveSession = {
+              id: dbUser.clerkUserId,
+              clerkUserId: dbUser.clerkUserId,
+              username: dbUser.username,
+              avatarSeed: dbUser.avatarSeed,
+              role: dbUser.role,
+              streak: dbUser.streak,
+              moodHistory: dbUser.moodHistory,
+              bookmarks: dbUser.bookmarks,
+              createdAt: dbUser.createdAt.toISOString()
+            };
+            return res.json({ success: true, data: currentActiveSession });
+          }
+        }
+      } catch (err) {
+        console.error("Login database error:", err);
+        return res.status(500).json({ success: false, error: "Database error executing secure login." });
+      }
+    } else {
+      // In-Memory Fallback
+      let dbUser = null;
+      if (isEmail) {
+        const emailLow = normalizedValue.toLowerCase();
+        dbUser = users.find((u: any) => 
+          (u.googleEmail && u.googleEmail.toLowerCase() === emailLow) ||
+          (u.email && u.email.toLowerCase() === emailLow) ||
+          (u.id && u.id === `google-${emailLow}`) ||
+          (u.clerkUserId && u.clerkUserId === `google-${emailLow}`)
+        );
+      } else {
+        dbUser = users.find((u: any) => u.username.toLowerCase() === normalizedValue.toLowerCase());
+      }
+
+      if (dbUser) {
+        currentActiveSession = { ...dbUser };
+        return res.json({ success: true, data: currentActiveSession });
+      } else {
+        // Auto create with email or username
+        if (isEmail) {
+          const emailLow = normalizedValue.toLowerCase();
+          const profile = await generateAnonymousProfile();
+          const newUser = {
+            id: `google-${emailLow}`,
+            clerkUserId: `google-${emailLow}`,
+            username: profile.username,
+            avatarSeed: profile.avatarSeed,
+            googleEmail: emailLow,
+            email: emailLow,
+            role: "user",
+            createdAt: new Date().toISOString(),
+            streak: 1,
+            moodHistory: [],
+            bookmarks: []
+          };
+          users.push(newUser);
+          currentActiveSession = { ...newUser };
+          return res.json({ success: true, data: currentActiveSession });
+        } else {
+          const newUser = {
+            id: `user-${Date.now()}`,
+            username: normalizedValue,
+            avatarSeed: `seed-${Math.floor(Math.random() * 1000)}`,
+            role: normalizedValue.toLowerCase().includes("moderator") || normalizedValue.toLowerCase().includes("admin") ? "admin" : "user",
+            createdAt: new Date().toISOString(),
+            streak: 1,
+            moodHistory: [],
+            bookmarks: []
+          };
+          users.push(newUser);
+          currentActiveSession = { ...newUser };
+          return res.json({ success: true, data: currentActiveSession });
+        }
+      }
+    }
+  });
   // Log out
   app.post("/api/auth/logout", (req, res) => {
     currentActiveSession = null;

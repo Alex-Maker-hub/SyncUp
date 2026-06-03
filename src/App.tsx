@@ -71,6 +71,7 @@ export default function App() {
   // Authentication Interface State
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authUsername, setAuthUsername] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
   const [selectedAvatarSeed, setSelectedAvatarSeed] = useState(`seed-${Math.floor(Math.random() * 1000)}`);
   const [authError, setAuthError] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
@@ -332,7 +333,7 @@ export default function App() {
       const endpoint = authMethod === 'login' ? '/api/auth/login' : '/api/auth/register';
       const payload = authMethod === 'login'
         ? { username: usernameToPost }
-        : { username: usernameToPost, avatarSeed: selectedAvatarSeed };
+        : { username: usernameToPost, avatarSeed: selectedAvatarSeed, email: authEmail.trim() };
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -344,6 +345,7 @@ export default function App() {
         setSession(json.data);
         setShowAuthModal(false);
         setAuthUsername('');
+        setAuthEmail('');
         // After log in, move to Feed immediately
         setCurrentView('feed');
       } else {
@@ -2044,7 +2046,41 @@ if (isLoadingSession) {
                     </div>
                   </div>
                 )}
+{/* Email input for registration */}
+                {authMethod === 'register' && (
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                      Email Address (Optional - links your stats to return securely)
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="e.g. your.email@gmail.com"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800/80 border border-transparent dark:border-slate-800 rounded-2xl text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors"
+                    />
+                  </div>
+                )}
 
+                {/* Pseudo input */}
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    {authMethod === 'register' ? 'Choose Custom Alias' : 'Enter Alias or Registered Email'}
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={35}
+                    placeholder={authMethod === 'register' ? "e.g. DreamyOtter99 (Leave blank for auto-generate)" : "e.g. QuietModerator or your.email@gmail.com"}
+                    value={authUsername}
+                    onChange={(e) => setAuthUsername(e.target.value.replace(/[^a-zA-Z0-9@._+-]/g, ''))}
+                    className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800/80 border border-transparent dark:border-slate-800 rounded-2xl text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 transition-colors"
+                  />
+                  {authMethod === 'login' && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono mt-1">
+                      💡 Tip: You can sign in using either your anonymous name alias or your linked email directly to restore your previous session!
+                    </p>
+                  )}
+                </div>
                 {/* Pseudo input */}
                 <div className="space-y-1.5">
                   <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">

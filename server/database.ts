@@ -9,6 +9,8 @@ export interface IMoodHistory {
 
 export interface IUserDocument extends Document {
   clerkUserId: string; // Linking clerk account
+  googleEmail?: string;
+  email?: string;
   username: string; // Anonymous nickname e.g. SoothingPanda120
   avatarSeed: string;
   role: "user" | "admin";
@@ -17,7 +19,6 @@ export interface IUserDocument extends Document {
   bookmarks: string[];
   createdAt: Date;
 }
-
 export interface IComment {
   _id?: string;
   content: string;
@@ -56,6 +57,8 @@ const MoodHistorySchema = new Schema<IMoodHistory>({
 
 const UserSchema = new Schema<IUserDocument>({
   clerkUserId: { type: String, required: true, unique: true, index: true },
+  googleEmail: { type: String, index: true },
+  email: { type: String, index: true },
   username: { type: String, required: true, unique: true },
   avatarSeed: { type: String, required: true },
   role: { type: String, enum: ["user", "admin"], default: "user" },
