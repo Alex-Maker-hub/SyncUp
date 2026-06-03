@@ -1292,9 +1292,24 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
+    app.get("/robots.txt", (req, res) => {
+  // Modify standard instructions here
+  res.send(`User-agent: *
+Allow: /
+Disallow: /admin
+...`);
+});
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+    app.get("/sitemap.xml", async (req, res) => {
+  const staticUrls = [
+    '',          // Homepage
+    '/about',    // About page
+    '/explore',  // Explore page
+  ];
+  // Dynamic endpoints (e.g. database posts mapping) follow below...
+});
   }
 
   app.listen(PORT, "0.0.0.0", () => {
