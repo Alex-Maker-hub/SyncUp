@@ -18,11 +18,21 @@ import { choose, ADJECTIVES, ANIMALS } from "./server/server-shared";
 
 dotenv.config();
 
-// Initialize Sentry on backend server
-Sentry.init({
-  dsn: process.env.SENTRY_DSN || "https://a55623c718f7a03a10b97f3241feef2a@o4511500705398784.ingest.us.sentry.io/4511500712607744",
-  tracesSampleRate: 1.0,
-});
+// Initialize Sentry on backend server safely
+try {
+  const serverDsn = process.env.SENTRY_DSN;
+  if (serverDsn && serverDsn !== "https://examplePublicKey@o0.ingest.sentry.io/0" && !serverDsn.includes("your-sentry-dsn") && serverDsn.startsWith("http")) {
+    Sentry.init({
+      dsn: serverDsn,
+      tracesSampleRate: 1.0,
+    });
+    console.log("Sentry server-side error monitoring initialized successfully.");
+  } else {
+    console.log("Sentry server-side disabled: No valid DSN configured.");
+  }
+} catch (error) {
+  console.warn("Sentry server-side initialization bypassed gracefully:", error);
+}
 
 // Auto-trigger database connection asynchronously
 connectToDatabase().catch(err => {
@@ -296,7 +306,7 @@ async function startServer() {
   // ---------------- AUTHENTICATION APIS ----------------
 
   // Setup current active user (persisted in active memory)
-  let currentActiveSession: any = null; // Auto login user-1 for development ease
+  let currentActiveSession: any = null; // Default to no session so visitors start on first page
 
   // Get current session
   app.get("/api/auth/session", (req, res) => {
@@ -364,7 +374,7 @@ async function startServer() {
       }
     } else {
       // Fallback local memory operations
-      let matched = users.find(u => u.clerkUserId === clerkUserId || (email && u.googleEmail === email));
+      let matched = users.find((u: any) => u.clerkUserId === clerkUserId || (email && u.googleEmail === email));
       if (matched) {
         currentActiveSession = { ...matched };
         return res.json({ success: true, data: currentActiveSession, isNewUser: false });
@@ -388,7 +398,7 @@ async function startServer() {
     }
   });
 
-// Google Sign In / Registration with dynamic AI anonymous nickname generation (simulation mapping)
+  // Google Sign In / Registration with dynamic AI anonymous nickname generation (simulation mapping)
   app.post("/api/auth/google", async (req, res) => {
     const { email, fullName } = req.body;
     if (!email) {
@@ -520,7 +530,20 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     const { username, avatarSeed, email } = req.body;
     let finalProfile = { username, avatarSeed };
-    const emailLow = email && email.trim() ? email.trim().toLowerCase() : null;
+    
+    // Support if they entered an email address inside the alias field!
+    const usernameLow = username && username.trim() ? username.trim().toLowerCase() : "";
+    const isUsernameEmail = usernameLow.includes("@");
+    
+    let emailLow = email && email.trim() ? email.trim().toLowerCase() : null;
+    if (isUsernameEmail && !emailLow) {
+      emailLow = usernameLow;
+      // Since they typed their email in the custom alias box, let's randomize their public anonymous alias
+      // to keep their personal email private on public posts!
+      const generated = generateAnonymousProfile();
+      finalProfile.username = generated.username;
+      finalProfile.avatarSeed = generated.avatarSeed;
+    }
 
     // Check if email already registered and return that user (going back to where they stopped!)
     const isMongo = await connectToDatabase();
@@ -817,6 +840,7 @@ async function startServer() {
       }
     }
   });
+
   // Log out
   app.post("/api/auth/logout", (req, res) => {
     currentActiveSession = null;
@@ -871,7 +895,7 @@ async function startServer() {
       }
     } else {
       // Find the user entry in the DB
-      const userIdx = users.findIndex(u => u.id === currentActiveSession.id);
+      const userIdx = users.findIndex((u: any) => u.id === currentActiveSession.id);
       if (userIdx !== -1) {
         const dbUser = users[userIdx];
         // Avoid duplicated mood entries on same day
@@ -934,7 +958,7 @@ async function startServer() {
         return res.status(500).json({ success: false, error: "Could not persist your bookmarked stories in MongoDB." });
       }
     } else {
-      const userIdx = users.findIndex(u => u.id === currentActiveSession.id);
+      const userIdx = users.findIndex((u: any) => u.id === currentActiveSession.id);
 
       if (userIdx !== -1) {
         const dbUser = users[userIdx];
@@ -1537,7 +1561,11 @@ async function startServer() {
       res.status(500).json({ success: false, error: "AI Moderation sweep crashed." });
     }
   });
-// ROBOTS.TXT ROUTE
+
+  // Setup Sentry Express Error Handler after all API routes
+  Sentry.setupExpressErrorHandler(app);
+
+  // ROBOTS.TXT ROUTE
   app.get("/robots.txt", (req, res) => {
     res.header('Content-Type', 'text/plain');
     const host = req.headers.host || 'yourdomain.com';
@@ -1550,60 +1578,6 @@ Disallow: /api/
 
 Sitemap: ${protocol}://${host}/sitemap.xml`.trim());
   });
-
-  // DYNAMIC SITEMAP ROUTE
-  app.get("/sitemap.xml", async (req, res) => {
-    res.header('Content-Type', 'application/xml');
-
-    const host = req.headers.host || 'yourdomain.com';
-    const protocol = req.headers['x-forwarded-proto'] || 'https';
-    const baseUrl = `${protocol}://${host}`;
-
-    // 1. Defining static views
-    const staticUrls = [
-      { loc: `${baseUrl}/`, changefreq: 'daily', priority: '1.0' },
-      { loc: `${baseUrl}/login`, changefreq: 'monthly', priority: '0.8' },
-    ];
-
-    let dynamicUrls: Array<{ loc: string; changefreq: string; priority: string }> = [];
-
-    // 2. Querying live posts from database
-    try {
-      const isMongo = await connectToDatabase();
-      if (isMongo) {
-        // Query clean, unflagged posts from your MongoDB model
-        const dbPosts = await Post.find({ isReported: false });
-        dynamicUrls = dbPosts.map((p: any) => ({
-          loc: `${baseUrl}/post/${p._id || p.id}`,
-          changefreq: 'weekly',
-          priority: '0.6'
-        }));
-      }
-    } catch (error) {
-      console.warn("Failed retrieving dynamic sitemap posts:", error);
-    }
-
-    const allUrls = [...staticUrls, ...dynamicUrls];
-
-    // 3. Compiling sitemap feed XML output
-    const xmlEntries = allUrls
-      .map(
-        (url) => `
-  <url>
-    <loc>${url.loc}</loc>
-    <changefreq>${url.changefreq}</changefreq>
-    <priority>${url.priority}</priority>
-  </url>`
-      )
-      .join('');
-
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${xmlEntries}
-</urlset>`.trim());
-  });
-  // Setup Sentry Express Error Handler after all API routes but before Vite middleware
-  Sentry.setupExpressErrorHandler(app);
 
   // DYNAMIC SITEMAP ROUTE
   app.get("/sitemap.xml", async (req, res) => {
@@ -1647,7 +1621,7 @@ ${xmlEntries}
     const allUrls = [...staticUrls, ...dynamicUrls];
 
     // 3. Compiling the final XML template
-    const xmlEntries = allUrls.map(url => `
+    const xmlEntries = allUrls.map((url: any) => `
       <url>
         <loc>${url.loc}</loc>
         <changefreq>${url.changefreq}</changefreq>
@@ -1662,6 +1636,7 @@ ${xmlEntries}
     res.send(sitemapXml);
   });
 
+
   // ---------------- VITE MIDDLEWARE SERVICE SETUP ----------------
 
   if (process.env.NODE_ENV !== "production") {
@@ -1673,24 +1648,9 @@ ${xmlEntries}
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get("/robots.txt", (req, res) => {
-  // Modify standard instructions here
-  res.send(`User-agent: *
-Allow: /
-Disallow: /admin
-...`);
-});
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
-    app.get("/sitemap.xml", async (req, res) => {
-  const staticUrls = [
-    '',          // Homepage
-    '/about',    // About page
-    '/explore',  // Explore page
-  ];
-  // Dynamic endpoints (e.g. database posts mapping) follow below...
-});
   }
 
   app.listen(PORT, "0.0.0.0", () => {

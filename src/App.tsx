@@ -313,6 +313,7 @@ export default function App() {
   // Login/Register Anonymous identity
   const handleAuth = async (isManualRandomize = false) => {
     setAuthError('');
+    setAuthEmail('');
 
     let usernameToPost = authUsername.trim();
     if ((isManualRandomize || usernameToPost === '') && authMethod === 'register') {
