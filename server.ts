@@ -14,9 +14,13 @@ import { connectToDatabase, User, Post } from "./server/database";
 import { uploadImageToCloudinary } from "./server/cloudinary";
 import { generateGroqOrGeminiNickname } from "./server/llm";
 import { choose, ADJECTIVES, ANIMALS } from "./server/server-shared";
-
+import * as Sentry from "@sentry/node";
 dotenv.config();
 
+Sentry.init({
+  dsn: process.env.SENTRY_DSN || "your-dsn-here",
+  tracesSampleRate: 1.0,
+});
 // Auto-trigger database connection asynchronously
 connectToDatabase().catch(err => {
   console.warn("MongoDB connection background warning:", err);
@@ -1212,6 +1216,8 @@ async function startServer() {
     }
   });
 
+// Setup Sentry Express Error Handler after all API routes but before Vite middleware
+  Sentry.setupExpressErrorHandler(app);
 
   // ---------------- VITE MIDDLEWARE SERVICE SETUP ----------------
 
