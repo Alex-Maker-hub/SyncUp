@@ -7,7 +7,7 @@ import './index.css';
 
 // 2. Initialized Sentry
 Sentry.init({
-  dsn: import.meta.env.VITE_SENTRY_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0",
+  dsn: import.meta.env.VITE_SENTRY_DSN || "https://a55623c718f7a03a10b97f3241feef2a@o4511500705398784.ingest.us.sentry.io/4511500712607744",
   integrations: [
     Sentry.browserTracingIntegration(),
     Sentry.replayIntegration(),
@@ -23,4 +23,5 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
+  
 );
