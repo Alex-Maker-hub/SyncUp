@@ -8,19 +8,22 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import * as Sentry from "@sentry/node";
 
 // Import real database models, Cloudinary services and Groq generator
 import { connectToDatabase, User, Post } from "./server/database";
 import { uploadImageToCloudinary } from "./server/cloudinary";
 import { generateGroqOrGeminiNickname } from "./server/llm";
 import { choose, ADJECTIVES, ANIMALS } from "./server/server-shared";
-import * as Sentry from "@sentry/node";
+
 dotenv.config();
 
+// Initialize Sentry on backend server
 Sentry.init({
-  dsn: process.env.SENTRY_DSN || "your-dsn-here",
+  dsn: process.env.SENTRY_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0",
   tracesSampleRate: 1.0,
 });
+
 // Auto-trigger database connection asynchronously
 connectToDatabase().catch(err => {
   console.warn("MongoDB connection background warning:", err);
@@ -293,7 +296,7 @@ async function startServer() {
   // ---------------- AUTHENTICATION APIS ----------------
 
   // Setup current active user (persisted in active memory)
-  let currentActiveSession: any =null; // Auto login user-1 for development ease
+  let currentActiveSession: any = { ...users[0] }; // Auto login user-1 for development ease
 
   // Get current session
   app.get("/api/auth/session", (req, res) => {
@@ -687,6 +690,7 @@ async function startServer() {
             reactions: jsonVal.reactions || { support: 0, hugs: 0, metoo: 0, listen: 0, heart: 0 }
           };
         });
+
         return res.json({ success: true, data: cleanedList });
       } catch (err) {
         console.error("Mongoose state error reading posts:", err);
@@ -696,25 +700,25 @@ async function startServer() {
       let list = [...posts];
 
       if (showFlagged === "true") {
-        list = list.filter(p => p.isReported);
+        list = list.filter((p: any) => p.isReported);
       } else {
-        list = list.filter(p => !p.isReported || p.reportsCount < 3);
+        list = list.filter((p: any) => !p.isReported || p.reportsCount < 3);
       }
 
       if (category && category !== "all") {
-        list = list.filter(p => p.category.toLowerCase() === (category as string).toLowerCase());
+        list = list.filter((p: any) => p.category.toLowerCase() === (category as string).toLowerCase());
       }
 
       if (search) {
         const q = (search as string).toLowerCase();
-        list = list.filter(p => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q));
+        list = list.filter((p: any) => p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q));
       }
 
       if (bookmarksOnly === "true") {
         if (!currentActiveSession) {
           return res.json({ success: true, data: [] });
         }
-        list = list.filter(p => currentActiveSession.bookmarks.includes(p.id));
+        list = list.filter((p: any) => currentActiveSession.bookmarks.includes(p.id));
       }
 
       if (sort === "trending") {
@@ -728,6 +732,7 @@ async function startServer() {
       } else {
         list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       }
+
       res.json({ success: true, data: list });
     }
   });
@@ -877,7 +882,7 @@ async function startServer() {
         return res.status(500).json({ success: false, error: "Failed to store reaction inside MongoDB." });
       }
     } else {
-      const postIdx = posts.findIndex(p => p.id === id);
+      const postIdx = posts.findIndex((p: any) => p.id === id);
       if (postIdx === -1) {
         return res.status(404).json({ success: false, error: "Post not found." });
       }
@@ -948,7 +953,7 @@ async function startServer() {
         return res.status(500).json({ success: false, error: "Failed to persist comment on MongoDB." });
       }
     } else {
-      const postIdx = posts.findIndex(p => p.id === id);
+      const postIdx = posts.findIndex((p: any) => p.id === id);
       if (postIdx === -1) {
         return res.status(404).json({ success: false, error: "Post not found." });
       }
@@ -972,7 +977,7 @@ async function startServer() {
     const { id } = req.params;
     const { reason } = req.body;
 
-    const postIdx = posts.findIndex(p => p.id === id);
+    const postIdx = posts.findIndex((p: any) => p.id === id);
     if (postIdx === -1) {
       return res.status(404).json({ success: false, error: "Post not found." });
     }
@@ -1096,7 +1101,7 @@ async function startServer() {
       }
     }
 
-    const postIdx = posts.findIndex(p => p.id === id);
+    const postIdx = posts.findIndex((p: any) => p.id === id);
     if (action === "delete") {
       if (postIdx !== -1) {
         posts.splice(postIdx, 1);
@@ -1141,7 +1146,7 @@ async function startServer() {
 
       // Also clean up from local memory
       const initialCount = posts.length;
-      posts = posts.filter(p => !p.isReported);
+      posts = posts.filter((p: any) => !p.isReported);
       const clearedCount = initialCount - posts.length;
 
       addModerationLog("Board Cleared", `Bulk expunged all reported incidents. Cleared unit count: ${clearedCount}.`, currentActiveSession?.username);
@@ -1154,7 +1159,7 @@ async function startServer() {
     } catch (err) {
       console.error("Failed to clear reported posts from database:", err);
       // Fallback: clear from memory
-      posts = posts.filter(p => !p.isReported);
+      posts = posts.filter((p: any) => !p.isReported);
       addModerationLog("Board Cleared", `Bulk expunged all reported incidents (Local Fallback Backup).`, currentActiveSession?.username);
       res.json({
         success: true,
@@ -1216,8 +1221,65 @@ async function startServer() {
     }
   });
 
-// Setup Sentry Express Error Handler after all API routes but before Vite middleware
+  // Setup Sentry Express Error Handler after all API routes but before Vite middleware
   Sentry.setupExpressErrorHandler(app);
+
+  // DYNAMIC SITEMAP ROUTE
+  app.get("/sitemap.xml", async (req, res) => {
+    res.header('Content-Type', 'application/xml');
+
+    const host = req.headers.host || 'yourdomain.com';
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const baseUrl = `${protocol}://${host}`;
+
+    // 1. Defining static views
+    const staticUrls = [
+      { loc: `${baseUrl}/`, changefreq: 'daily', priority: '1.0' },
+      { loc: `${baseUrl}/login`, changefreq: 'monthly', priority: '0.8' },
+    ];
+
+    let dynamicUrls: Array<{ loc: string; changefreq: string; priority: string }> = [];
+
+    // 2. Querying live posts from database or fallback posts variable
+    try {
+      const isMongo = await connectToDatabase();
+      if (isMongo) {
+        // Query clean, unflagged posts from your MongoDB model
+        const dbPosts = await Post.find({ isReported: false });
+        dynamicUrls = dbPosts.map((p: any) => ({
+          loc: `${baseUrl}/post/${p._id || p.id}`,
+          changefreq: 'weekly',
+          priority: '0.7'
+        }));
+      } else {
+        // Fallback to in-memory posts list if MongoDB is not running
+        dynamicUrls = posts.map((p: any) => ({
+          loc: `${baseUrl}/post/${p.id}`,
+          changefreq: 'weekly',
+          priority: '0.7'
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to fetch posts for dynamic sitemap:", err);
+    }
+
+    const allUrls = [...staticUrls, ...dynamicUrls];
+
+    // 3. Compiling the final XML template
+    const xmlEntries = allUrls.map(url => `
+      <url>
+        <loc>${url.loc}</loc>
+        <changefreq>${url.changefreq}</changefreq>
+        <priority>${url.priority}</priority>
+      </url>`).join('');
+
+    const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  ${xmlEntries}
+</urlset>`.trim();
+
+    res.send(sitemapXml);
+  });
 
   // ---------------- VITE MIDDLEWARE SERVICE SETUP ----------------
 
