@@ -277,7 +277,7 @@ Respond exclusively in standard JSON format containing keys: "safety_status" ("c
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   app.use(express.json());
 
@@ -289,7 +289,7 @@ async function startServer() {
   // ---------------- AUTHENTICATION APIS ----------------
 
   // Setup current active user (persisted in active memory)
-  let currentActiveSession: any = null; // Auto login user-1 for development ease
+  let currentActiveSession: any =null; // Auto login user-1 for development ease
 
   // Get current session
   app.get("/api/auth/session", (req, res) => {
@@ -664,18 +664,18 @@ async function startServer() {
         let list = await Post.find(query);
 
         if (sort === "trending") {
-          list = list.sort((a, b) => {
-            const sumA = Array.from(a.reactions ? a.reactions.values() : []).reduce((sum: number, cur: any) => sum + (cur as number), 0) as number;
-            const sumB = Array.from(b.reactions ? b.reactions.values() : []).reduce((sum: number, cur: any) => sum + (cur as number), 0) as number;
+          list = list.sort((a: any, b: any) => {
+            const sumA = Array.from(a.reactions ? (a.reactions as Map<string, any>).values() : []).reduce((sum: number, cur: any) => sum + (cur as number), 0) as number;
+            const sumB = Array.from(b.reactions ? (b.reactions as Map<string, any>).values() : []).reduce((sum: number, cur: any) => sum + (cur as number), 0) as number;
             return sumB - sumA;
           });
         } else if (sort === "comments") {
-          list = list.sort((a, b) => b.comments.length - a.comments.length);
+          list = list.sort((a: any, b: any) => b.comments.length - a.comments.length);
         } else {
-          list = list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          list = list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         }
 
-        const cleanedList = list.map(p => {
+        const cleanedList = list.map((p: any) => {
           const jsonVal = p.toJSON();
           return {
             ...jsonVal,
@@ -683,7 +683,6 @@ async function startServer() {
             reactions: jsonVal.reactions || { support: 0, hugs: 0, metoo: 0, listen: 0, heart: 0 }
           };
         });
-
         return res.json({ success: true, data: cleanedList });
       } catch (err) {
         console.error("Mongoose state error reading posts:", err);
@@ -715,17 +714,16 @@ async function startServer() {
       }
 
       if (sort === "trending") {
-        list.sort((a, b) => {
+        list.sort((a: any, b: any) => {
           const scoreA = Object.values(a.reactions).reduce((sum: number, cur: any) => sum + (cur as number), 0) as number;
           const scoreB = Object.values(b.reactions).reduce((sum: number, cur: any) => sum + (cur as number), 0) as number;
           return scoreB - scoreA;
         });
       } else if (sort === "comments") {
-        list.sort((a, b) => b.comments.length - a.comments.length);
+        list.sort((a: any, b: any) => b.comments.length - a.comments.length);
       } else {
-        list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        list.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       }
-
       res.json({ success: true, data: list });
     }
   });

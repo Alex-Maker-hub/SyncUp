@@ -80,7 +80,12 @@ export default function App() {
   const [googleStep, setGoogleStep] = useState<'none' | 'account_select' | 'generating'>('none');
   const [selectedGoogleEmail, setSelectedGoogleEmail] = useState('');
   const [customGoogleEmail, setCustomGoogleEmail] = useState('');
-
+  const [recentGoogleEmail, setRecentGoogleEmail] = useState<string>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('syncup_recent_google_email') || '' : '';
+  });
+  const [recentGoogleName, setRecentGoogleName] = useState<string>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('syncup_recent_google_name') || '' : '';
+  });
   // Mood Tracker State
   const [showMoodModal, setShowMoodModal] = useState(false);
   const [selectedMood, setSelectedMood] = useState<'calm' | 'anxious' | 'sad' | 'excited' | 'overwhelmed' | 'peaceful'>('calm');
@@ -262,6 +267,13 @@ export default function App() {
       });
       const json = await res.json();
       if (json.success && json.data) {
+        // Save to localStorage so this device remembers this specific user
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('syncup_recent_google_email', email);
+          localStorage.setItem('syncup_recent_google_name', fullName);
+          setRecentGoogleEmail(email);
+          setRecentGoogleName(fullName);
+        }
         // Pause briefly for high aesthetic timing so they can enjoy the model working!
         setTimeout(() => {
           setSession(json.data);
@@ -2004,23 +2016,55 @@ export default function App() {
                   {/* Account choice list */}
                   <div className="rounded-2xl border border-gray-150 dark:border-slate-800 divide-y divide-gray-100 dark:divide-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-900/50">
                     
-                    {/* Primary user account from environment metadata */}
+                   {/* Account choice list */}
+                  <div className="rounded-2xl border border-gray-150 dark:border-slate-800 divide-y divide-gray-100 dark:divide-slate-800 overflow-hidden bg-slate-50/50 dark:bg-slate-900/50">
+                    
+                    {/* 1. Device-specific Account (Dynamic) */}
+                    {recentGoogleEmail ? (
+                      <button
+                        type="button"
+                        onClick={() => handleGoogleAuth(recentGoogleEmail, recentGoogleName || recentGoogleEmail.split('@')[0])}
+                        className="w-full p-4 hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-between text-left transition cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-full bg-purple-600 text-white font-extrabold flex items-center justify-center text-sm shadow uppercase">
+                            {(recentGoogleName || recentGoogleEmail).slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="leading-tight">
+                            <h4 className="text-xs font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                              {recentGoogleName || recentGoogleEmail.split('@')[0]}
+                              <span className="text-[9px] bg-purple-100 dark:bg-purple-950 text-purple-600 dark:text-purple-400 px-1.5 py-0.5 rounded font-normal font-sans">Recent on this Device</span>
+                            </h4>
+                            <span className="text-[11px] text-gray-500 dark:text-slate-400 font-mono">{recentGoogleEmail}</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-400" />
+                      </button>
+                    ) : (
+                      /* If they haven't logged in on this device, prompt them to use the customized form below, or select a mock profile */
+                      <div className="p-4 bg-purple-50/20 dark:bg-purple-950/10 text-center text-xs text-purple-700 dark:text-purple-400 leading-relaxed">
+                        No Google session saved on this device. Use the <strong className="font-bold">Custom Sign In</strong> form below to enter your email.
+                      </div>
+                    )}
+
+                    {/* 2. Public sandbox profiles */}
                     <button
                       type="button"
-                      onClick={() => handleGoogleAuth('alexnjoroge919@gmail.com', 'Alex Njoroge')}
+                      onClick={() => handleGoogleAuth('anonymous.guide@gmail.com', 'Calm Guide')}
                       className="w-full p-4 hover:bg-black/5 dark:hover:bg-white/5 flex items-center justify-between text-left transition cursor-pointer"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-purple-600 text-white font-extrabold flex items-center justify-center text-sm shadow">
-                          AN
+                        <div className="w-9 h-9 rounded-full bg-indigo-600 text-white font-extrabold flex items-center justify-center text-sm shadow animate-pulse">
+                          CG
                         </div>
                         <div className="leading-tight">
-                          <h4 className="text-xs font-bold text-gray-800 dark:text-white">Alex Njoroge</h4>
-                          <span className="text-[11px] text-gray-500 dark:text-slate-400">alexnjoroge919@gmail.com</span>
+                          <h4 className="text-xs font-bold text-gray-800 dark:text-white">Calm Guide</h4>
+                          <span className="text-[11px] text-gray-400 dark:text-slate-500 font-mono">anonymous.guide@gmail.com</span>
                         </div>
                       </div>
                       <ChevronRight className="w-4 h-4 text-gray-400" />
                     </button>
+                  </div>
 
                     {/* Secondary developer mock account */}
                     <button
