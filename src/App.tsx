@@ -559,7 +559,20 @@ export default function App() {
       </div>
     );
   };
-
+if (isLoadingSession) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center font-sans">
+        <div className="relative flex flex-col items-center gap-4 text-center px-4">
+          <div className="absolute inset-0 bg-purple-500/10 blur-3xl rounded-full w-48 h-48 mx-auto -translate-y-5 animate-pulse" />
+          <Logo size="xl" showTagline={false} />
+          <div className="flex items-center gap-2.5 mt-6 text-purple-600 dark:text-purple-300 font-medium bg-purple-500/5 dark:bg-purple-500/10 px-4 py-2 rounded-2xl border border-purple-500/10 relative z-10 animate-fade-in">
+            <Loader2 className="w-4 h-4 animate-spin text-purple-500" />
+            <span className="text-sm tracking-wide">Syncing up with your safe space...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-500 overflow-x-hidden flex flex-col font-sans selection:bg-purple-500/35">
       
