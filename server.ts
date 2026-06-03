@@ -20,7 +20,7 @@ dotenv.config();
 
 // Initialize Sentry on backend server
 Sentry.init({
-  dsn: process.env.SENTRY_DSN || "https://examplePublicKey@o0.ingest.sentry.io/0",
+  dsn: process.env.SENTRY_DSN || "https://a55623c718f7a03a10b97f3241feef2a@o4511500705398784.ingest.us.sentry.io/4511500712607744",
   tracesSampleRate: 1.0,
 });
 
@@ -1220,7 +1220,71 @@ async function startServer() {
       res.status(500).json({ success: false, error: "AI Moderation sweep crashed." });
     }
   });
+// ROBOTS.TXT ROUTE
+  app.get("/robots.txt", (req, res) => {
+    res.header('Content-Type', 'text/plain');
+    const host = req.headers.host || 'yourdomain.com';
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    res.send(`User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /profile
+Disallow: /api/
 
+Sitemap: ${protocol}://${host}/sitemap.xml`.trim());
+  });
+
+  // DYNAMIC SITEMAP ROUTE
+  app.get("/sitemap.xml", async (req, res) => {
+    res.header('Content-Type', 'application/xml');
+
+    const host = req.headers.host || 'yourdomain.com';
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const baseUrl = `${protocol}://${host}`;
+
+    // 1. Defining static views
+    const staticUrls = [
+      { loc: `${baseUrl}/`, changefreq: 'daily', priority: '1.0' },
+      { loc: `${baseUrl}/login`, changefreq: 'monthly', priority: '0.8' },
+    ];
+
+    let dynamicUrls: Array<{ loc: string; changefreq: string; priority: string }> = [];
+
+    // 2. Querying live posts from database
+    try {
+      const isMongo = await connectToDatabase();
+      if (isMongo) {
+        // Query clean, unflagged posts from your MongoDB model
+        const dbPosts = await Post.find({ isReported: false });
+        dynamicUrls = dbPosts.map((p: any) => ({
+          loc: `${baseUrl}/post/${p._id || p.id}`,
+          changefreq: 'weekly',
+          priority: '0.6'
+        }));
+      }
+    } catch (error) {
+      console.warn("Failed retrieving dynamic sitemap posts:", error);
+    }
+
+    const allUrls = [...staticUrls, ...dynamicUrls];
+
+    // 3. Compiling sitemap feed XML output
+    const xmlEntries = allUrls
+      .map(
+        (url) => `
+  <url>
+    <loc>${url.loc}</loc>
+    <changefreq>${url.changefreq}</changefreq>
+    <priority>${url.priority}</priority>
+  </url>`
+      )
+      .join('');
+
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${xmlEntries}
+</urlset>`.trim());
+  });
   // Setup Sentry Express Error Handler after all API routes but before Vite middleware
   Sentry.setupExpressErrorHandler(app);
 
