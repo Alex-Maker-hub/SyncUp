@@ -296,7 +296,7 @@ async function startServer() {
   // ---------------- AUTHENTICATION APIS ----------------
 
   // Setup current active user (persisted in active memory)
-  let currentActiveSession: any = { ...users[0] }; // Auto login user-1 for development ease
+  let currentActiveSession: any = null; // Auto login user-1 for development ease
 
   // Get current session
   app.get("/api/auth/session", (req, res) => {
